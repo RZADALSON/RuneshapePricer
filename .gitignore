@@ -1,0 +1,21 @@
+# Build artifacts
+build/
+dist/
+_obf/
+_obfbuild/
+__pycache__/
+*.pyc
+
+# Per-user runtime files (settings, log, icon cache) — not part of the repo
+config.json
+runeshape_pricer.log
+icon_hashes.json
+
+# The release binary is published via GitHub Releases, not committed
+RuneshapePricer.exe
+
+# Local backups / archives
+test/
+*.7z
+*.zip
+*.bak

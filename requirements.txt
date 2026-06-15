@@ -1,0 +1,7 @@
+# Runtime dependencies for the PoE2 Runeshape price overlay.
+# Install with:  pip install -r requirements.txt
+mss>=9.0.1            # fast screen capture
+Pillow>=10.0.0       # image handling for OCR
+winocr>=0.0.13       # Windows.Media.Ocr wrapper (offline OCR, no external binaries)
+keyboard>=0.13.5     # global F3 hotkey
+pystray>=0.19.5      # system-tray icon (run in background)
