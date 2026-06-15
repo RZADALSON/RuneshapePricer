@@ -119,7 +119,12 @@ class Overlay:
             user32.SetLayeredWindowAttributes.argtypes = [
                 ctypes.c_void_p, ctypes.c_uint32, ctypes.c_ubyte, ctypes.c_uint32
             ]
-            hwnd = user32.GetParent(self.canvas.winfo_id())
+            # The OUTER top-level window receives mouse hit-testing, so
+            # WS_EX_TRANSPARENT must go there (not the inner content window) or
+            # clicks won't pass through to the game/desktop.
+            hwnd = user32.GetParent(self.root.winfo_id())
+            if not hwnd:
+                hwnd = user32.GetParent(self.canvas.winfo_id())
 
             ex = user32.GetWindowLongW(hwnd, _GWL_EXSTYLE)
             ex |= (
@@ -138,12 +143,17 @@ class Overlay:
             print(f"[overlay] could not set click-through style: {exc!r}")
 
     def _show(self) -> None:
-        """Re-assert click-through styles and show the window (only when drawing)."""
-        self._make_click_through()  # idempotent; ensures click-through stays set
+        """Show the window, then (re)apply click-through to the now-visible window.
+
+        The outer top-level HWND only exists once the window is mapped, so we
+        deiconify first and apply the styles afterwards.
+        """
         try:
             self.root.deiconify()
+            self.root.update_idletasks()
         except Exception:
             pass
+        self._make_click_through()
 
     def _hide(self) -> None:
         """Hide the window so it never blocks the desktop / other windows."""
