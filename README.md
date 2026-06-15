@@ -38,6 +38,12 @@ pyinstaller --noconfirm --clean --distpath . --workpath build RuneshapePricer.sp
 Requires Python 3.10+. Tuning tools: `python main.py selftest` (prices),
 `python main.py ocr <image>` (OCR preview).
 
+## Disclaimer
+**Use at your own risk.** By downloading and using this software you take full
+responsibility upon yourself and accept these terms. The author accepts **no
+liability** for anything arising from its use — including, without limitation,
+**account bans or suspensions, hardware damage, or data loss**.
+
 ---
 *Unofficial tool. Not affiliated with or endorsed by Grinding Gear Games or
 poe.ninja. Price data: poe.ninja.*
@@ -82,6 +88,13 @@ pyinstaller --noconfirm --clean --distpath . --workpath build RuneshapePricer.sp
 ```
 Wymaga Pythona 3.10+. Narzędzia do strojenia: `python main.py selftest` (ceny),
 `python main.py ocr <obraz>` (podgląd OCR).
+
+## Zastrzeżenie
+**Używasz na własną odpowiedzialność.** Pobierając i używając tego programu
+bierzesz pełną odpowiedzialność na siebie i akceptujesz te warunki. Autor **nie
+ponosi żadnej odpowiedzialności** za jakiekolwiek skutki używania — w
+szczególności za **bany lub zawieszenia konta, uszkodzenia sprzętu czy utratę
+danych**.
 
 ---
 *Nieoficjalne narzędzie. Niepowiązane z Grinding Gear Games ani poe.ninja. Dane
