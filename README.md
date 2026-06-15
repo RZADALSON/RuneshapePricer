@@ -10,6 +10,8 @@ reads the screen (OCR) and draws on top (a transparent, click‑through overlay)
 
 **Free and open-source.** No key, no login.
 
+![Runeshape Pricer showing prices on the Currency tab](docs/demo.png)
+
 ## Usage
 1. Download **`RuneshapePricer.exe`** from [**Releases**](../../releases) and keep
    it in a normal folder (**not** `Program Files`).
