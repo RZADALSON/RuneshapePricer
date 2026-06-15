@@ -95,13 +95,12 @@ class Overlay:
         self._small_font = tkfont.Font(family=cfg.font_family,
                                        size=max(9, cfg.font_size - 5))
 
-        # Realize the (still-hidden) window so its HWND exists, apply the colour
-        # key + alpha while hidden, THEN show it — so the magenta key colour
-        # never flashes on screen.
+        # Realize the (still-hidden) window so its HWND exists, then apply the
+        # click-through + colour key while hidden. The window STAYS hidden until
+        # there's something to show (see _show/_clear) — so when idle it never
+        # flashes and never blocks the desktop or other windows.
         self.root.update_idletasks()
         self._make_click_through()
-        self.root.deiconify()
-        self.root.update_idletasks()
         self.root.after(16, self._poll)
 
     # ---- window styling -------------------------------------------------
@@ -137,6 +136,21 @@ class Overlay:
             self._set_alpha(self._base_alpha)
         except Exception as exc:  # pragma: no cover - platform dependent
             print(f"[overlay] could not set click-through style: {exc!r}")
+
+    def _show(self) -> None:
+        """Re-assert click-through styles and show the window (only when drawing)."""
+        self._make_click_through()  # idempotent; ensures click-through stays set
+        try:
+            self.root.deiconify()
+        except Exception:
+            pass
+
+    def _hide(self) -> None:
+        """Hide the window so it never blocks the desktop / other windows."""
+        try:
+            self.root.withdraw()
+        except Exception:
+            pass
 
     def _set_alpha(self, alpha: float) -> None:
         """Set the window's global opacity (0..255), keeping magenta transparent."""
@@ -237,7 +251,7 @@ class Overlay:
 
     def _render(self, labels: list[Label]) -> None:
         self._clear_timer()
-        self._set_alpha(self._base_alpha)
+        self._show()
         self.canvas.delete("all")
         for lab in labels:
             self._draw_text(lab.x, lab.y, lab.text, lab.color,
@@ -271,7 +285,7 @@ class Overlay:
 
     def _render_debug(self, boxes: list[DebugBox], seconds: float) -> None:
         self._clear_timer()
-        self._set_alpha(self._base_alpha)
+        self._show()
         self.canvas.delete("all")
         for b in boxes:
             x0, y0 = self._lx(b.x), self._ly(b.y)
@@ -285,7 +299,7 @@ class Overlay:
     def _render_progress(self, text: str, frac: float) -> None:
         """A persistent loading bar at the top of the screen (no auto-hide)."""
         self._clear_timer()
-        self._set_alpha(self._base_alpha)
+        self._show()
         self.canvas.delete("all")
         frac = max(0.0, min(1.0, frac))
         bw, bh = 460, 40
@@ -302,7 +316,7 @@ class Overlay:
     def _clear(self) -> None:
         self._clear_timer()
         self.canvas.delete("all")
-        self._set_alpha(self._base_alpha)  # reset to base opacity for next render
+        self._hide()  # hide the window so it never blocks the desktop when idle
 
     def _clear_timer(self) -> None:
         for attr in ("_hide_after_id", "_fade_after_id"):
