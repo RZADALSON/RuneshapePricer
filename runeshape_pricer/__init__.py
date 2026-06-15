@@ -6,4 +6,4 @@ Orbs next to each row as a transparent, click-through overlay. Triggered by a
 hotkey (default F3); the overlay auto-hides after a few seconds.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

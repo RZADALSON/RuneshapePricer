@@ -52,6 +52,8 @@ _TR = {
         "save": "Save",
         # status overlay
         "building_index": "Building icon index (first run, ~a minute)...",
+        "startup_running": ("Runeshape Pricer is running in the background  ·  "
+                            "F3 = prices  ·  Shift+F3 = settings"),
     },
     "pl": {
         "lic_title": "Runeshape Pricer — Aktywacja",
@@ -94,6 +96,8 @@ _TR = {
         "set_language": "Język:",
         "save": "Zapisz",
         "building_index": "Buduję indeks ikon (pierwszy raz trwa ~minutę)...",
+        "startup_running": ("Runeshape Pricer działa w tle  ·  "
+                            "F3 = ceny  ·  Shift+F3 = ustawienia"),
     },
 }
 

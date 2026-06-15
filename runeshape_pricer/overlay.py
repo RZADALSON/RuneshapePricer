@@ -71,6 +71,9 @@ class Overlay:
         self._win_x, self._win_y = left, top
 
         self.root = tk.Tk()
+        # Keep the window hidden until the transparency is applied, otherwise the
+        # full-screen magenta key colour flashes for a frame on first launch.
+        self.root.withdraw()
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.attributes("-transparentcolor", _TRANSPARENT_KEY)
@@ -92,11 +95,13 @@ class Overlay:
         self._small_font = tkfont.Font(family=cfg.font_family,
                                        size=max(9, cfg.font_size - 5))
 
-        # Realize the window fully before touching its Win32 styles, otherwise
-        # the colour key can be applied to a not-yet-mapped window and get lost
-        # (which leaves a layered window with no key -> a solid black screen).
-        self.root.update()
+        # Realize the (still-hidden) window so its HWND exists, apply the colour
+        # key + alpha while hidden, THEN show it — so the magenta key colour
+        # never flashes on screen.
+        self.root.update_idletasks()
         self._make_click_through()
+        self.root.deiconify()
+        self.root.update_idletasks()
         self.root.after(16, self._poll)
 
     # ---- window styling -------------------------------------------------

@@ -421,6 +421,18 @@ def main() -> None:
         print(f"[app] tray unavailable ({exc!r}); running without it. "
               f"Close this window to quit.")
 
+    # Brief on-screen notice that the program is running in the background.
+    try:
+        from .capture import get_monitor_bounds
+        from .i18n import t
+        left, top, mw, mh = get_monitor_bounds(getattr(cfg, "monitor", 1))
+        app.overlay.request_render([Label(
+            left + mw // 2, top + int(mh * 0.10),
+            t(cfg.language, "startup_running"), "#d6ead9", anchor="center",
+        )])
+    except Exception as exc:
+        print(f"[app] startup notice failed: {exc!r}")
+
     try:
         app.overlay.run()  # blocks until Quit
     finally:
