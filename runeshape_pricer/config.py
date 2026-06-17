@@ -95,6 +95,11 @@ class Config:
     # The last `fade_seconds` of that time are spent fading out smoothly.
     fade_seconds: float = 2.0
 
+    # When True, prices ignore display_seconds and stay on screen until the
+    # Runeshape panel closes: the app keeps re-reading the panel and clears the
+    # prices once it can no longer find any priceable rows (i.e. you closed it).
+    persist_until_closed: bool = False
+
     # How often (minutes) prices are re-fetched from poe.ninja in the background.
     refresh_minutes: int = 30
 
@@ -110,6 +115,13 @@ class Config:
     overlay_opacity: int = 210
     decimals: int = 1                  # decimal places for the exalt value
     currency_suffix: str = " ex"
+
+    # Currency the prices are shown in: "exalt" (Exalted Orbs) or "divine"
+    # (Divine Orbs). Divine uses the live divine->exalt rate from poe.ninja
+    # (the Divine Orb's own exalt price). Switch it in the settings window.
+    currency_display: str = "exalt"
+    # Suffix drawn after a divine amount (mirrors currency_suffix for exalts).
+    divine_suffix: str = " div"
 
     # Value-based colouring (exalt thresholds). Items at/above gold_value are
     # drawn gold, at/above high_value green, at/above mid_value white, below

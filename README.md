@@ -1,9 +1,10 @@
 # Runeshape Pricer
 
 A lightweight overlay for **Path of Exile 2** that shows the value (in **Exalted
-Orbs**) of each **Runeshape Combinations** output right on your screen. Open the
-panel, press **F3**, and the price appears next to every row (it fades out after
-a few seconds).
+Orbs** or **Divine Orbs**) of each **Runeshape Combinations** output right on
+your screen. Open the panel, press **F3**, and the price appears next to every
+row (it fades out after a few seconds, or stays up until you close the panel —
+your choice in Settings).
 
 Prices come live from **poe.ninja**. It **never touches the game** — it only
 reads the screen (OCR) and draws on top (a transparent, click‑through overlay).
@@ -19,8 +20,9 @@ reads the screen (OCR) and draws on top (a transparent, click‑through overlay)
    fullscreen).
 3. Open the **Runeshape Combinations** panel and press **F3**.
 
-Tray icon → **Settings** (language, hotkey, display time, scan area) and
-**Quit**. Default language is English (switchable to Polish in Settings).
+Tray icon → **Settings** (language, currency *ex/div*, hotkey, display time or
+keep‑until‑panel‑closes, scan area) and **Quit**. Default language is English
+(switchable to Polish in Settings).
 
 ## Requirements
 - Windows 10/11.
@@ -55,8 +57,9 @@ poe.ninja. Price data: poe.ninja.*
 # Runeshape Pricer (Polski)
 
 Nakładka do **Path of Exile 2** pokazująca ceny kombinacji *Runeshape* w
-**Exaltach** prosto na ekranie. Otwórz panel **Runeshape Combinations**, naciśnij
-**F3** — obok każdego wiersza pojawi się jego wartość (po chwili znika).
+**Exaltach** lub **Divine** prosto na ekranie. Otwórz panel **Runeshape
+Combinations**, naciśnij **F3** — obok każdego wiersza pojawi się jego wartość
+(po chwili znika albo zostaje, aż zamkniesz panel — do wyboru w ustawieniach).
 
 Ceny pobierane na żywo z **poe.ninja**. Program **nie ingeruje w grę** — tylko
 czyta ekran (OCR) i rysuje na wierzchu (przezroczysta, „przeklikiwalna" nakładka).
@@ -70,8 +73,9 @@ czyta ekran (OCR) i rysuje na wierzchu (przezroczysta, „przeklikiwalna" nakła
    nie pokazują).
 3. Otwórz panel **Runeshape Combinations** i naciśnij **F3**.
 
-Ikona w zasobniku → **Settings** (język, skrót, czas wyświetlania, obszar) i
-**Quit**. Domyślny język: angielski (w Settings można zmienić na polski).
+Ikona w zasobniku → **Settings** (język, waluta *ex/div*, skrót, czas
+wyświetlania lub „trzymaj aż zamkniesz panel", obszar) i **Quit**. Domyślny
+język: angielski (w Settings można zmienić na polski).
 
 ## Wymagania
 - Windows 10/11.

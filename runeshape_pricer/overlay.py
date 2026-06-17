@@ -175,8 +175,10 @@ class Overlay:
             pass
 
     # ---- thread-safe API ------------------------------------------------
-    def request_render(self, labels: list[Label]) -> None:
-        self._q.put(("render", labels))
+    def request_render(self, labels: list[Label], persist: bool = False) -> None:
+        """Show ``labels``. When ``persist`` is True they stay until cleared
+        (no auto-hide / fade) — the app clears them when the panel closes."""
+        self._q.put(("render", (labels, persist)))
 
     def request_render_debug(self, boxes: list[DebugBox], seconds: float) -> None:
         self._q.put(("debug", (boxes, seconds)))
@@ -200,7 +202,7 @@ class Overlay:
             while True:
                 kind, payload = self._q.get_nowait()
                 if kind == "render":
-                    self._render(payload)
+                    self._render(*payload)
                 elif kind == "debug":
                     self._render_debug(*payload)
                 elif kind == "progress":
@@ -259,13 +261,18 @@ class Overlay:
         self.canvas.create_text(cx, cy, text=text, fill=color, font=font,
                                 anchor=anchor)
 
-    def _render(self, labels: list[Label]) -> None:
+    def _render(self, labels: list[Label], persist: bool = False) -> None:
         self._clear_timer()
         self._show()
         self.canvas.delete("all")
         for lab in labels:
             self._draw_text(lab.x, lab.y, lab.text, lab.color,
                             anchor=getattr(lab, "anchor", "w"))
+        if persist:
+            # Keep the prices up until the app clears them (panel closed). Reset
+            # to full opacity in case a previous fade had dimmed the window.
+            self._set_alpha(self._base_alpha)
+            return
         # Stay fully visible for (display - fade) seconds, then fade out over
         # the last `fade_seconds` so prices dissolve instead of blinking off.
         full = float(self.cfg.display_seconds)

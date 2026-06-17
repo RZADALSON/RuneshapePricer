@@ -136,6 +136,10 @@ class PriceBook:
         self.last_error: str | None = None
         self.item_count: int = 0
         self.active_league: str = "?"
+        # Exalts per one Divine Orb, so prices can be shown in divine too. The
+        # Divine Orb's own exalt value IS this rate; 0 = unknown (no Currency
+        # data) -> divine display falls back to exalts.
+        self.divine_rate: float = 0.0
 
     def lookup(self, name: str) -> PriceEntry | None:
         """Exact normalized lookup, with a fuzzy fallback for OCR errors.
@@ -200,6 +204,9 @@ class PriceBook:
             print(f"[prices] refresh failed (league={resolved!r}): {self.last_error}")
             return False
 
+        # The Divine Orb's price in exalts is exactly the divine<->exalt rate.
+        divine_entry = new_map.get(normalize("Divine Orb"))
+
         with self._lock:
             self._by_norm = new_map
             self._keys = list(new_map.keys())
@@ -207,6 +214,7 @@ class PriceBook:
             self.last_update = time.time()
             self.last_error = "; ".join(errors) if errors else None
             self.active_league = resolved
+            self.divine_rate = divine_entry.exalt if divine_entry else 0.0
         print(
             f"[prices] refreshed {self.item_count} items from "
             f"{len(categories)} categories (league={resolved})"

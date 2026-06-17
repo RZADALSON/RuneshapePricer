@@ -36,10 +36,29 @@ _COLOR_REGION = "#4DABF7"    # calibration only: capture-area outline -> blue
 # Flip to True (and re-add "scan" in settings_ui._MODES) to re-enable.
 _SCAN_ENABLED = False
 
+# Persist mode: how often to re-read the panel to see if it's still open, and
+# how many consecutive empty reads mean "the panel closed" (clear the prices).
+_WATCH_INTERVAL = 1.5     # seconds between panel re-reads
+_WATCH_MISS_LIMIT = 2     # empty reads in a row before we treat the panel closed
 
-def _fmt_value(value: float, suffix: str) -> str:
-    """Human-friendly exalt amount (no ugly '0.0 ex')."""
-    if value < 0.095:
+
+def _fmt_value(value: float, suffix: str, divine: bool = False) -> str:
+    """Human-friendly currency amount (no ugly '0.0 ex').
+
+    Divine amounts are small numbers (a divine is worth ~100+ exalts), so they
+    keep more decimal places for the cheap rows instead of collapsing them all
+    to a single "<0.1".
+    """
+    if divine:
+        if value < 0.005:
+            body = "<0.01"
+        elif value < 1:
+            body = f"{value:.2f}"
+        elif value < 100:
+            body = f"{value:.1f}"
+        else:
+            body = f"{value:.0f}"
+    elif value < 0.095:
         body = "<0.1"
     elif value < 10:
         body = f"{value:.1f}"
@@ -58,6 +77,10 @@ class PricerApp:
         self.overlay = Overlay(cfg)
         self._stop = threading.Event()
         self._busy = threading.Lock()
+        # Persist-mode panel watcher: a generation counter cancels a running
+        # watcher when a new read starts or settings change.
+        self._watch_gen = 0
+        self._watch_sig = ""
 
     # ---- pricing --------------------------------------------------------
     def _refresh_prices(self) -> None:
@@ -113,70 +136,149 @@ class PricerApp:
             return _COLOR_MID
         return _COLOR_LOW
 
+    def _format_price(self, exalt_value: float) -> str:
+        """Format an exalt value in the user's chosen currency (ex or divine).
+
+        Colours are always decided from the exalt value (so the thresholds keep
+        meaning); only the displayed number/suffix changes. If divine is
+        selected but the rate is unknown (no Currency data), fall back to ex.
+        """
+        if (getattr(self.cfg, "currency_display", "exalt") == "divine"
+                and self.book.divine_rate > 0):
+            return _fmt_value(exalt_value / self.book.divine_rate,
+                              getattr(self.cfg, "divine_suffix", " div"),
+                              divine=True)
+        return _fmt_value(exalt_value, self.cfg.currency_suffix)
+
+    def _compute_labels(self) -> tuple[list, str]:
+        """Capture + OCR + price the panel; return ``(labels, signature)``.
+
+        ``signature`` changes whenever the rendered prices change, so the
+        persist watcher can skip redundant redraws. Returns ``([], "")`` when no
+        priceable rows are visible (panel closed / not open). Does not touch the
+        overlay — callers decide what to render.
+        """
+        cap = self._grab()
+
+        # Import OCR lazily so a missing OCR pack doesn't stop the app from
+        # starting (it'll just report on first use).
+        from .ocr import read_lines, OcrUnavailable
+        try:
+            lines = read_lines(cap.image, self.cfg.ocr_language,
+                               getattr(self.cfg, "ocr_scale", 1.5))
+        except OcrUnavailable as exc:
+            print(f"[app] {exc}")
+            return [], ""
+
+        priced: list[tuple] = []  # (right_edge_x, center_y, text, color)
+        for ln in lines:
+            parsed = parse_output_line(ln.text)
+            if parsed is None:
+                continue
+            entry = self.book.lookup(parsed.name)
+            if entry is not None:
+                value = entry.exalt * parsed.quantity
+                if value < self.cfg.min_value:
+                    continue
+                text = self._format_price(value)
+                color = self._color_for(value)
+            elif parsed.is_unique:
+                text = self.cfg.unknown_marker
+                color = _COLOR_UNKNOWN
+            elif parsed.had_quantity and self.cfg.show_unpriced:
+                # An output row we recognised but poe.ninja can't price
+                # (e.g. Alloys) -> a dash, so it doesn't look broken.
+                text = self.cfg.unpriced_marker
+                color = _COLOR_LOW
+            else:
+                continue  # a header or unmatched noise -> show nothing
+            priced.append((ln.x + ln.w, ln.cy, text, color))
+
+        if not priced:
+            return [], ""
+
+        # Align all prices into a single column just right of the panel.
+        column_x = max(p[0] for p in priced) + self.cfg.label_offset_x
+        labels = [
+            Label(
+                x=int(cap.origin_x + column_x),
+                y=int(cap.origin_y + cy),
+                text=text,
+                color=color,
+            )
+            for (_right, cy, text, color) in priced
+        ]
+        sig = "|".join(f"{lab.y}:{lab.text}" for lab in labels)
+        return labels, sig
+
     def _read_and_show(self) -> None:
         try:
             if self.book.item_count == 0:
                 print("[app] prices not loaded yet, ignoring hotkey")
                 return
 
-            cap = self._grab()
-
-            # Import OCR lazily so a missing OCR pack doesn't stop the app from
-            # starting (it'll just report on first use).
-            from .ocr import read_lines, OcrUnavailable
-            try:
-                lines = read_lines(cap.image, self.cfg.ocr_language,
-                                   getattr(self.cfg, "ocr_scale", 1.5))
-            except OcrUnavailable as exc:
-                print(f"[app] {exc}")
-                return
-
-            priced: list[tuple] = []  # (right_edge_x, center_y, text, color)
-            for ln in lines:
-                parsed = parse_output_line(ln.text)
-                if parsed is None:
-                    continue
-                entry = self.book.lookup(parsed.name)
-                if entry is not None:
-                    value = entry.exalt * parsed.quantity
-                    if value < self.cfg.min_value:
-                        continue
-                    text = _fmt_value(value, self.cfg.currency_suffix)
-                    color = self._color_for(value)
-                elif parsed.is_unique:
-                    text = self.cfg.unknown_marker
-                    color = _COLOR_UNKNOWN
-                elif parsed.had_quantity and self.cfg.show_unpriced:
-                    # An output row we recognised but poe.ninja can't price
-                    # (e.g. Alloys) -> a dash, so it doesn't look broken.
-                    text = self.cfg.unpriced_marker
-                    color = _COLOR_LOW
-                else:
-                    continue  # a header or unmatched noise -> show nothing
-                priced.append((ln.x + ln.w, ln.cy, text, color))
-
-            if not priced:
+            labels, sig = self._compute_labels()
+            if not labels:
                 print("[app] no priceable rows detected")
                 self.overlay.request_clear()
+                self._watch_gen += 1  # cancel any persist watcher
                 return
 
-            # Align all prices into a single column just right of the panel.
-            column_x = max(p[0] for p in priced) + self.cfg.label_offset_x
-            labels = [
-                Label(
-                    x=int(cap.origin_x + column_x),
-                    y=int(cap.origin_y + cy),
-                    text=text,
-                    color=color,
-                )
-                for (_right, cy, text, color) in priced
-            ]
-            self.overlay.request_render(labels)
-            print(f"[app] showed {len(labels)} prices")
+            persist = bool(getattr(self.cfg, "persist_until_closed", False))
+            self.overlay.request_render(labels, persist=persist)
+            print(f"[app] showed {len(labels)} prices"
+                  + (" (persist)" if persist else ""))
+            if persist:
+                self._start_watch(sig)
+            else:
+                self._watch_gen += 1  # drop any stale watcher pinning the prices
         except Exception as exc:  # never let the worker thread kill the app
             print(f"[app] read failed: {exc!r}")
         finally:
             self._busy.release()
+
+    # ---- persist-mode panel watcher ------------------------------------
+    def _start_watch(self, signature: str) -> None:
+        """Spawn the watcher that clears the prices once the panel closes."""
+        self._watch_gen += 1
+        gen = self._watch_gen
+        self._watch_sig = signature
+        threading.Thread(target=self._watch_loop, args=(gen,),
+                         daemon=True).start()
+
+    def _watch_loop(self, gen: int) -> None:
+        misses = 0
+        last_sig = self._watch_sig
+        while not self._stop.is_set() and self._watch_gen == gen:
+            time.sleep(_WATCH_INTERVAL)
+            if self._stop.is_set() or self._watch_gen != gen:
+                return
+            # Don't collide with a manual F3 read; just skip this tick if busy.
+            if not self._busy.acquire(blocking=False):
+                continue
+            try:
+                labels, sig = self._compute_labels()
+            except Exception as exc:
+                print(f"[app] watch read failed: {exc!r}")
+                labels, sig = None, ""
+            finally:
+                self._busy.release()
+
+            if self._watch_gen != gen:
+                return  # a newer read superseded us while we were reading
+            if labels is None:
+                continue  # transient error -> keep the prices, try again
+            if not labels:
+                misses += 1
+                if misses >= _WATCH_MISS_LIMIT:
+                    print("[app] panel closed; clearing persistent prices")
+                    self.overlay.request_clear()
+                    return
+            else:
+                misses = 0
+                if sig != last_sig:  # panel scrolled / changed -> re-place
+                    self.overlay.request_render(labels, persist=True)
+                    last_sig = sig
 
     def _calibrate(self) -> None:
         """Show the capture area + exactly what OCR read for each row.
@@ -206,7 +308,7 @@ class PricerApp:
                     entry = self.book.lookup(parsed.name)
                     if entry is not None:
                         value = entry.exalt * parsed.quantity
-                        label = f"{_fmt_value(value, self.cfg.currency_suffix)}  «{ln.text}»"
+                        label = f"{self._format_price(value)}  «{ln.text}»"
                         color = self._color_for(value)
                     elif parsed.is_unique:
                         label = f"?  «{ln.text}»"
@@ -307,7 +409,7 @@ class PricerApp:
                 Label(
                     int(cap.origin_x + cx),
                     int(cap.origin_y + cy),
-                    _fmt_value(entry.exalt, self.cfg.currency_suffix),
+                    self._format_price(entry.exalt),
                     self._color_for(entry.exalt),
                     anchor="center",
                 )
@@ -358,6 +460,11 @@ class PricerApp:
             self.cfg.save()
         except Exception as exc:
             print(f"[app] could not save config: {exc!r}")
+        # Drop any persistent prices + watcher so currency/persist changes take
+        # effect cleanly on the next F3 (a stale watcher could keep old prices
+        # in a now-different currency pinned on screen).
+        self._watch_gen += 1
+        self.overlay.request_clear()
         self.apply_hotkeys()
         if _SCAN_ENABLED and getattr(self.cfg, "mode", "runeshape") == "scan":
             self._ensure_icons_async()

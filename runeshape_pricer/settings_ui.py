@@ -1,9 +1,11 @@
 """Settings window (opened from the tray). Runs on the Tk main thread.
 
-Lets the user change the hotkeys, toggle the developer calibration hotkey, set
-how long prices stay on screen, and choose whether to scan the whole screen or
-just the Runeshape panel (left side). On save it updates the Config in place and
-calls ``on_save`` so the app can persist and re-apply (e.g. re-register hotkeys).
+Lets the user change the hotkeys, toggle the developer calibration hotkey, pick
+the price currency (Exalted or Divine Orbs), set how long prices stay on screen
+(or keep them up until the Runeshape panel closes), and choose whether to scan
+the whole screen or just the Runeshape panel (left side). On save it updates the
+Config in place and calls ``on_save`` so the app can persist and re-apply (e.g.
+re-register hotkeys).
 """
 
 from __future__ import annotations
@@ -69,6 +71,15 @@ def open_settings(root: tk.Misc, cfg, on_save) -> None:
     label(t(lang, "set_language"))
     combo(lang_var, [d for d, _ in LANGUAGES])
 
+    # --- currency (exalt / divine) ---
+    currencies = [(t(lang, "currency_exalt"), "exalt"),
+                  (t(lang, "currency_divine"), "divine")]
+    cur_cur = getattr(cfg, "currency_display", "exalt")
+    cur_disp = next((d for d, v in currencies if v == cur_cur), currencies[0][0])
+    currency_var = tk.StringVar(value=cur_disp)
+    label(t(lang, "set_currency"))
+    combo(currency_var, [d for d, _ in currencies])
+
     # --- mode (only shown when more than one mode is available) ---
     cur_mode = getattr(cfg, "mode", "runeshape")
     mode_disp = next((d for d, v in _MODES if v == cur_mode), _MODES[0][0])
@@ -101,6 +112,15 @@ def open_settings(root: tk.Misc, cfg, on_save) -> None:
                insertbackground=_FG, font=("Consolas", 11),
                justify="center").pack(anchor="w")
 
+    # --- persist until panel closes (overrides the display time above) ---
+    persist_var = tk.BooleanVar(
+        value=bool(getattr(cfg, "persist_until_closed", False)))
+    tk.Checkbutton(
+        frm, text=t(lang, "set_persist"), variable=persist_var,
+        bg=_BG, fg=_FG, selectcolor=_FIELD, activebackground=_BG,
+        activeforeground=_FG, font=("Segoe UI", 10), anchor="w",
+    ).pack(anchor="w", pady=(8, 2))
+
     # --- scan area ---
     label(t(lang, "set_scan_area"))
     area_var = tk.StringVar(value="full" if getattr(cfg, "scan_full_screen", False)
@@ -121,10 +141,13 @@ def open_settings(root: tk.Misc, cfg, on_save) -> None:
         cfg.calibrate_enabled = bool(calib_var.get())
         cfg.calibrate_hotkey = (calib_key_var.get().strip().lower()
                                 or cfg.calibrate_hotkey)
+        cfg.currency_display = dict(currencies).get(currency_var.get(),
+                                                    cfg.currency_display)
         try:
             cfg.display_seconds = max(1.0, float(secs_var.get().replace(",", ".")))
         except ValueError:
             pass
+        cfg.persist_until_closed = bool(persist_var.get())
         cfg.scan_full_screen = (area_var.get() == "full")
         _close()
         try:
