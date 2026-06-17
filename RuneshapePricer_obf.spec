@@ -13,9 +13,9 @@ sys.path.insert(0, OBF)
 
 from PyInstaller.utils.hooks import collect_all
 
-datas = []
+datas = [("exalt.png", "."), ("divine.png", ".")]  # currency orb icons
 binaries = []
-hiddenimports = []
+hiddenimports = ["PIL.ImageTk"]
 
 for pkg in ("winrt", "winocr", "mss", "pystray", "keyboard", "PIL",
             "pyarmor_runtime_000000"):

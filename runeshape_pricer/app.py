@@ -36,10 +36,13 @@ _COLOR_REGION = "#4DABF7"    # calibration only: capture-area outline -> blue
 # Flip to True (and re-add "scan" in settings_ui._MODES) to re-enable.
 _SCAN_ENABLED = False
 
-# Persist mode: how often to re-read the panel to see if it's still open, and
-# how many consecutive empty reads mean "the panel closed" (clear the prices).
-_WATCH_INTERVAL = 1.5     # seconds between panel re-reads
-_WATCH_MISS_LIMIT = 2     # empty reads in a row before we treat the panel closed
+# Persist mode: the watcher cheaply diffs the panel region several times a
+# second (no OCR) so prices vanish almost instantly when the panel closes,
+# without burning CPU on constant OCR while it just sits open. OCR runs only on
+# a moderate change (scroll / tab switch) to re-place the prices.
+_WATCH_INTERVAL = 0.05     # seconds between cheap panel snapshots (~20 Hz)
+_WATCH_DIFF_MIN = 0.045    # mean frame-to-frame change (0..1); below = unchanged
+_WATCH_DIFF_GONE = 0.22    # a change this large = panel vanished -> clear at once
 
 
 def _fmt_value(value: float, suffix: str, divine: bool = False) -> str:
@@ -127,6 +130,19 @@ class PricerApp:
             self.cfg.region_w, self.cfg.region_h, self.cfg.monitor,
         )
 
+    def _watch_grab(self):
+        """Cheap snapshot for the persist watcher: just the middle band of the
+        capture region. Closing the panel swaps the whole area (parchment ->
+        game world), so a thin band is enough to detect it — and grabbing ~1/3
+        the pixels keeps the fast (~20 Hz) poll loop light on CPU.
+        """
+        if getattr(self.cfg, "scan_full_screen", False):
+            return grab_region(0.0, 0.35, 1.0, 0.3, self.cfg.monitor)
+        h = self.cfg.region_h * 0.3
+        y = self.cfg.region_y + (self.cfg.region_h - h) / 2
+        return grab_region(self.cfg.region_x, y, self.cfg.region_w, h,
+                           self.cfg.monitor)
+
     def _color_for(self, value: float) -> str:
         if value >= getattr(self.cfg, "gold_value", 800.0):
             return _COLOR_GOLD
@@ -136,19 +152,26 @@ class PricerApp:
             return _COLOR_MID
         return _COLOR_LOW
 
-    def _format_price(self, exalt_value: float) -> str:
-        """Format an exalt value in the user's chosen currency (ex or divine).
-
-        Colours are always decided from the exalt value (so the thresholds keep
-        meaning); only the displayed number/suffix changes. If divine is
-        selected but the rate is unknown (no Currency data), fall back to ex.
+    def _price_parts(self, exalt_value: float) -> tuple[str, str]:
+        """Return ``(number_text, icon)`` for an exalt value in the chosen
+        currency. ``icon`` is "exalt" or "divine" — the overlay draws the
+        matching orb image instead of a textual suffix. Colours are still
+        decided from the exalt value, so the thresholds keep their meaning. If
+        divine is selected but the rate is unknown (no Currency data), fall
+        back to exalts.
         """
         if (getattr(self.cfg, "currency_display", "exalt") == "divine"
                 and self.book.divine_rate > 0):
-            return _fmt_value(exalt_value / self.book.divine_rate,
-                              getattr(self.cfg, "divine_suffix", " div"),
-                              divine=True)
-        return _fmt_value(exalt_value, self.cfg.currency_suffix)
+            return _fmt_value(exalt_value / self.book.divine_rate, "",
+                              divine=True), "divine"
+        return _fmt_value(exalt_value, "", divine=False), "exalt"
+
+    def _format_price(self, exalt_value: float) -> str:
+        """Textual price (number + suffix) — used by the calibration view."""
+        text, icon = self._price_parts(exalt_value)
+        suffix = (getattr(self.cfg, "divine_suffix", " div") if icon == "divine"
+                  else self.cfg.currency_suffix)
+        return text + suffix
 
     def _compute_labels(self) -> tuple[list, str]:
         """Capture + OCR + price the panel; return ``(labels, signature)``.
@@ -170,17 +193,18 @@ class PricerApp:
             print(f"[app] {exc}")
             return [], ""
 
-        priced: list[tuple] = []  # (right_edge_x, center_y, text, color)
+        priced: list[tuple] = []  # (right_edge_x, center_y, text, color, icon)
         for ln in lines:
             parsed = parse_output_line(ln.text)
             if parsed is None:
                 continue
             entry = self.book.lookup(parsed.name)
+            icon = None
             if entry is not None:
                 value = entry.exalt * parsed.quantity
                 if value < self.cfg.min_value:
                     continue
-                text = self._format_price(value)
+                text, icon = self._price_parts(value)
                 color = self._color_for(value)
             elif parsed.is_unique:
                 text = self.cfg.unknown_marker
@@ -192,7 +216,7 @@ class PricerApp:
                 color = _COLOR_LOW
             else:
                 continue  # a header or unmatched noise -> show nothing
-            priced.append((ln.x + ln.w, ln.cy, text, color))
+            priced.append((ln.x + ln.w, ln.cy, text, color, icon))
 
         if not priced:
             return [], ""
@@ -205,10 +229,11 @@ class PricerApp:
                 y=int(cap.origin_y + cy),
                 text=text,
                 color=color,
+                icon=icon,
             )
-            for (_right, cy, text, color) in priced
+            for (_right, cy, text, color, icon) in priced
         ]
-        sig = "|".join(f"{lab.y}:{lab.text}" for lab in labels)
+        sig = "|".join(f"{lab.y}:{lab.text}:{lab.icon}" for lab in labels)
         return labels, sig
 
     def _read_and_show(self) -> None:
@@ -247,13 +272,36 @@ class PricerApp:
                          daemon=True).start()
 
     def _watch_loop(self, gen: int) -> None:
-        misses = 0
+        from PIL import Image, ImageChops, ImageStat
+
+        def snapshot():
+            """Tiny greyscale thumbnail of the panel band for cheap diffing.
+            NEAREST just samples a few thousand pixels, so it's near-free."""
+            return self._watch_grab().image.resize((64, 32), Image.NEAREST).convert("L")
+
+        ref = None
         last_sig = self._watch_sig
         while not self._stop.is_set() and self._watch_gen == gen:
             time.sleep(_WATCH_INTERVAL)
             if self._stop.is_set() or self._watch_gen != gen:
                 return
-            # Don't collide with a manual F3 read; just skip this tick if busy.
+            try:
+                small = snapshot()
+            except Exception as exc:
+                print(f"[app] watch grab failed: {exc!r}")
+                continue
+            if ref is None:
+                ref = small  # baseline (taken once the prices are on screen)
+                continue
+            diff = ImageStat.Stat(ImageChops.difference(small, ref)).mean[0] / 255.0
+            ref = small  # compare frame-to-frame, so ambient motion is ignored
+            if diff < _WATCH_DIFF_MIN:
+                continue  # panel unchanged -> keep prices up, no OCR (cheap)
+            if diff >= _WATCH_DIFF_GONE:
+                print(f"[app] panel closed (change={diff:.2f}); clearing prices")
+                self.overlay.request_clear()
+                return
+            # Moderate change (scroll / tab / partial close) -> OCR to decide.
             if not self._busy.acquire(blocking=False):
                 continue
             try:
@@ -263,22 +311,18 @@ class PricerApp:
                 labels, sig = None, ""
             finally:
                 self._busy.release()
-
             if self._watch_gen != gen:
                 return  # a newer read superseded us while we were reading
             if labels is None:
                 continue  # transient error -> keep the prices, try again
             if not labels:
-                misses += 1
-                if misses >= _WATCH_MISS_LIMIT:
-                    print("[app] panel closed; clearing persistent prices")
-                    self.overlay.request_clear()
-                    return
-            else:
-                misses = 0
-                if sig != last_sig:  # panel scrolled / changed -> re-place
-                    self.overlay.request_render(labels, persist=True)
-                    last_sig = sig
+                print(f"[app] panel closed (change={diff:.2f}); clearing prices")
+                self.overlay.request_clear()
+                return
+            if sig != last_sig:  # panel scrolled / changed -> re-place prices
+                self.overlay.request_render(labels, persist=True)
+                last_sig = sig
+            ref = None  # rebuild the baseline after the (possible) re-render
 
     def _calibrate(self) -> None:
         """Show the capture area + exactly what OCR read for each row.
@@ -405,17 +449,19 @@ class PricerApp:
                     kept.append((dist, cx, cy, entry))
 
             # Price shown centred on the icon that was recognised.
-            labels = [
-                Label(
+            labels = []
+            for (dist, cx, cy, entry) in kept:
+                if entry.exalt < self.cfg.min_value:
+                    continue
+                text, icon = self._price_parts(entry.exalt)
+                labels.append(Label(
                     int(cap.origin_x + cx),
                     int(cap.origin_y + cy),
-                    self._format_price(entry.exalt),
+                    text,
                     self._color_for(entry.exalt),
                     anchor="center",
-                )
-                for (dist, cx, cy, entry) in kept
-                if entry.exalt >= self.cfg.min_value
-            ]
+                    icon=icon,
+                ))
             if labels:
                 self.overlay.request_render(labels)
                 print(f"[app] scan: {len(labels)} items priced")

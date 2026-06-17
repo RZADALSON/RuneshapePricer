@@ -105,21 +105,33 @@ def open_settings(root: tk.Misc, cfg, on_save) -> None:
     combo(calib_key_var)
 
     # --- display seconds ---
-    label(t(lang, "set_display"))
+    secs_lbl = tk.Label(frm, text=t(lang, "set_display"), bg=_BG, fg=_SUB,
+                        font=("Segoe UI", 10))
+    secs_lbl.pack(anchor="w", pady=(10, 2))
     secs_var = tk.StringVar(value=str(cfg.display_seconds))
-    tk.Spinbox(frm, from_=1, to=30, increment=1, textvariable=secs_var, width=6,
-               bg=_FIELD, fg=_FG, buttonbackground=_FIELD, relief="flat",
-               insertbackground=_FG, font=("Consolas", 11),
-               justify="center").pack(anchor="w")
+    secs_spin = tk.Spinbox(frm, from_=1, to=30, increment=1, textvariable=secs_var,
+                          width=6, bg=_FIELD, fg=_FG, buttonbackground=_FIELD,
+                          relief="flat", insertbackground=_FG,
+                          disabledbackground=_BG, disabledforeground="#5a5a66",
+                          font=("Consolas", 11), justify="center")
+    secs_spin.pack(anchor="w")
 
-    # --- persist until panel closes (overrides the display time above) ---
+    # --- persist until panel closes (locks the display time above, since the
+    # prices then stay until the panel closes rather than after N seconds) ---
     persist_var = tk.BooleanVar(
         value=bool(getattr(cfg, "persist_until_closed", False)))
+
+    def _sync_secs(*_):
+        on = bool(persist_var.get())
+        secs_spin.configure(state="disabled" if on else "normal")
+        secs_lbl.configure(fg="#5a5a66" if on else _SUB)
+
     tk.Checkbutton(
-        frm, text=t(lang, "set_persist"), variable=persist_var,
+        frm, text=t(lang, "set_persist"), variable=persist_var, command=_sync_secs,
         bg=_BG, fg=_FG, selectcolor=_FIELD, activebackground=_BG,
         activeforeground=_FG, font=("Segoe UI", 10), anchor="w",
     ).pack(anchor="w", pady=(8, 2))
+    _sync_secs()  # reflect the saved state on open
 
     # --- scan area ---
     label(t(lang, "set_scan_area"))

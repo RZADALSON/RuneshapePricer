@@ -17,6 +17,7 @@ cfg = load_config()
 def on_save():
     print("SAVED:", cfg.hotkey, "calib=", cfg.calibrate_enabled,
           cfg.calibrate_hotkey, "secs=", cfg.display_seconds,
+          "currency=", cfg.currency_display, "persist=", cfg.persist_until_closed,
           "full=", cfg.scan_full_screen)
 
 

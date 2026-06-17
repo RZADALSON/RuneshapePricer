@@ -21,6 +21,15 @@ from dataclasses import dataclass
 
 from .capture import get_monitor_bounds
 
+# The dark rounded "pill" the prices sit on (also the backdrop currency icons
+# are composited onto, so their edges blend instead of fringing on magenta).
+_PILL_FILL = "#0d0d12"
+_PILL_OUTLINE = "#3a3a46"
+# Currency orb icons drawn after the number (file name in the app folder ->
+# label icon key). If an image is missing we fall back to this text suffix.
+_ICON_FILES = {"exalt": "exalt.png", "divine": "divine.png"}
+_ICON_FALLBACK_SUFFIX = {"exalt": " ex", "divine": " div"}
+
 # A colour that never appears in our labels, used as the transparency key.
 _TRANSPARENT_KEY = "#FF00FF"             # pure magenta
 # Same colour as a Win32 COLORREF (0x00BBGGRR): B=FF, G=00, R=FF.
@@ -43,6 +52,7 @@ class Label:
     text: str
     color: str
     anchor: str = "w"   # "w" = price to the right; "center" = centred on a point
+    icon: str | None = None  # "exalt"/"divine" -> draw that orb after the text
 
 
 @dataclass
@@ -95,6 +105,12 @@ class Overlay:
         self._small_font = tkfont.Font(family=cfg.font_family,
                                        size=max(9, cfg.font_size - 5))
 
+        # Currency orb icons (exalt/divine) drawn next to the number. Loaded
+        # once here; sized to the price font's line height. Empty if Pillow's
+        # ImageTk or the PNGs aren't available -> we fall back to a text suffix.
+        self._icons: dict = {}
+        self._load_icons()
+
         # Realize the (still-hidden) window so its HWND exists, then apply the
         # click-through + colour key while hidden. The window STAYS hidden until
         # there's something to show (see _show/_clear) — so when idle it never
@@ -102,6 +118,52 @@ class Overlay:
         self.root.update_idletasks()
         self._make_click_through()
         self.root.after(16, self._poll)
+
+    # ---- currency icons -------------------------------------------------
+    def _find_icon(self, filename: str) -> str | None:
+        """Locate an icon PNG next to the exe / source, or bundled in the exe."""
+        import os
+        import sys
+
+        candidates = []
+        if getattr(sys, "frozen", False):
+            candidates.append(os.path.join(os.path.dirname(sys.executable), filename))
+            meipass = getattr(sys, "_MEIPASS", None)
+            if meipass:
+                candidates.append(os.path.join(meipass, filename))
+        # Source layout: project root (one level above this package).
+        here = os.path.dirname(os.path.abspath(__file__))
+        candidates.append(os.path.join(os.path.dirname(here), filename))
+        candidates.append(os.path.join(os.getcwd(), filename))
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        return None
+
+    def _load_icons(self) -> None:
+        try:
+            from PIL import Image, ImageTk
+        except Exception as exc:
+            print(f"[overlay] currency icons disabled (Pillow ImageTk): {exc!r}")
+            return
+        # Match the digits: a touch taller than the cap height reads well.
+        size = max(14, int(self._font.metrics("linespace") * 1.15))
+        fill_rgb = tuple(int(_PILL_FILL[i:i + 2], 16) for i in (1, 3, 5))
+        for key, filename in _ICON_FILES.items():
+            path = self._find_icon(filename)
+            if not path:
+                print(f"[overlay] icon {filename!r} not found; using text suffix")
+                continue
+            try:
+                orb = Image.open(path).convert("RGBA").resize(
+                    (size, size), Image.LANCZOS)
+                # Composite onto the pill colour so anti-aliased edges blend
+                # into the tag instead of fringing against the magenta key.
+                tile = Image.new("RGBA", (size, size), fill_rgb + (255,))
+                tile.alpha_composite(orb)
+                self._icons[key] = ImageTk.PhotoImage(tile.convert("RGB"))
+            except Exception as exc:
+                print(f"[overlay] could not load icon {path!r}: {exc!r}")
 
     # ---- window styling -------------------------------------------------
     def _make_click_through(self) -> None:
@@ -239,27 +301,39 @@ class Overlay:
         return self.canvas.create_polygon(pts, smooth=True, **kw)
 
     def _draw_text(self, x: float, y: float, text: str, color: str, font=None,
-                   anchor: str = "w") -> None:
+                   anchor: str = "w", icon: str | None = None) -> None:
         """Draw a price as colour text on a rounded, semi-dark 'pill'.
 
         The pill gives crisp contrast over any background and avoids the magenta
         colour-key fringing that anti-aliased outlines produce. Text is drawn
         *after* the pill so its anti-aliased edges blend against the dark pill,
-        not the transparent key colour.
+        not the transparent key colour. When ``icon`` names a loaded currency
+        orb it's drawn just after the number (instead of an " ex"/" div"
+        suffix); if that image is unavailable we append the text suffix instead.
         """
         font = font or self._font
         cx, cy = self._lx(x), self._ly(y)
+        img = self._icons.get(icon) if icon else None
+        if icon and img is None:
+            text = text + _ICON_FALLBACK_SUFFIX.get(icon, "")
         tw = font.measure(text)
         th = font.metrics("linespace")
-        x0 = cx if anchor == "w" else cx - tw / 2
-        y0 = cy - th / 2
+        gap = 4 if img else 0
+        iw = img.width() if img else 0
+        ih = img.height() if img else 0
+        content_w = tw + gap + iw
+        box_h = max(th, ih)
+        left = cx if anchor == "w" else cx - content_w / 2
+        y0 = cy - box_h / 2
         padx, pady = 9, 4
         self._round_rect(
-            x0 - padx, y0 - pady, x0 + tw + padx, y0 + th + pady, r=9,
-            fill="#0d0d12", outline="#3a3a46", width=1,
+            left - padx, y0 - pady, left + content_w + padx, y0 + box_h + pady,
+            r=9, fill=_PILL_FILL, outline=_PILL_OUTLINE, width=1,
         )
-        self.canvas.create_text(cx, cy, text=text, fill=color, font=font,
-                                anchor=anchor)
+        self.canvas.create_text(left, cy, text=text, fill=color, font=font,
+                                anchor="w")
+        if img:
+            self.canvas.create_image(left + tw + gap, cy, image=img, anchor="w")
 
     def _render(self, labels: list[Label], persist: bool = False) -> None:
         self._clear_timer()
@@ -267,7 +341,8 @@ class Overlay:
         self.canvas.delete("all")
         for lab in labels:
             self._draw_text(lab.x, lab.y, lab.text, lab.color,
-                            anchor=getattr(lab, "anchor", "w"))
+                            anchor=getattr(lab, "anchor", "w"),
+                            icon=getattr(lab, "icon", None))
         if persist:
             # Keep the prices up until the app clears them (panel closed). Reset
             # to full opacity in case a previous fade had dimmed the window.

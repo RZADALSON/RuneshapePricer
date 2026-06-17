@@ -9,9 +9,9 @@ namespace plus the runtime, and add the exact submodules as hidden imports.
 
 from PyInstaller.utils.hooks import collect_all
 
-datas = []
+datas = [("exalt.png", "."), ("divine.png", ".")]  # currency orb icons
 binaries = []
-hiddenimports = []
+hiddenimports = ["PIL.ImageTk"]
 
 for pkg in ("winrt", "winocr", "mss", "pystray", "keyboard", "PIL"):
     try:

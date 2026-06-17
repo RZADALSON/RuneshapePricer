@@ -13,10 +13,11 @@ cfg = load_config()
 cfg.display_seconds = 60  # keep prices up long enough to screenshot
 ov = Overlay(cfg)
 ov.request_render([
-    Label(x=700, y=300, text="1056 ex", color="#FFD700"),   # gold (>800)
-    Label(x=700, y=370, text="120 ex", color="#51CF66"),    # green
-    Label(x=700, y=440, text="3.0 ex", color="#FFFFFF"),    # white
-    Label(x=700, y=510, text="?", color="#FFD43B"),         # unknown
+    Label(x=700, y=300, text="1056", color="#FFD700", icon="exalt"),  # gold
+    Label(x=700, y=370, text="120", color="#51CF66", icon="exalt"),   # green
+    Label(x=700, y=440, text="3.0", color="#FFFFFF", icon="exalt"),   # white
+    Label(x=700, y=510, text="5.5", color="#FFD700", icon="divine"),  # divine
+    Label(x=700, y=580, text="?", color="#FFD43B"),                   # unknown
 ])
 ov.root.after(15000, ov.root.destroy)  # auto-close so it never lingers
 ov.run()
